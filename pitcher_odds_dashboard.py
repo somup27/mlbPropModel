@@ -1,7 +1,7 @@
 # -- Imports and Setup --
 import streamlit as st
 import pandas as pd
-import json
+import time
 from pybaseball import statcast, playerid_lookup
 import requests
 
@@ -9,19 +9,69 @@ import requests
 
 @st.cache_data
 def pitcher_lines_today():
-    kJSON = json.load(open('pitcherLines/strikeoutLines.json', 'r'))
-    poJSON = json.load(open('pitcherLines/pitchingOutsLines.json', 'r'))
-    haJSON = json.load(open('pitcherLines/hitsAllowedLines.json', 'r'))
-    waJSON = json.load(open('pitcherLines/walksAllowedLines.json', 'r'))
+    headers = {
+        "accept": "application/json",  # changed to expect JSON response
+        "accept-encoding": "gzip, deflate, br, zstd",
+        "accept-language": "en-US,en;q=0.9",
+        "cache-control": "max-age=0",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+        "upgrade-insecure-requests": "1",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "none",
+        "sec-fetch-user": "?1",
+        "sec-ch-ua": '"Chromium";v="136", "Google Chrome";v="136", "Not.A/Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+    }
+
+    urls = {
+        'Hits Allowed': 'https://sportsbook-nash.draftkings.com/api/sportscontent/dkusdc/v1/leagues/84240/categories/1031/subcategories/9886',
+        'Strikeouts': 'https://sportsbook-nash.draftkings.com/api/sportscontent/dkusdc/v1/leagues/84240/categories/1031/subcategories/15221',
+        'Pitching Outs': 'https://sportsbook-nash.draftkings.com/api/sportscontent/dkusdc/v1/leagues/84240/categories/1031/subcategories/17413',
+        'Walks Allowed': 'https://sportsbook-nash.draftkings.com/api/sportscontent/dkusdc/v1/leagues/84240/categories/1031/subcategories/15219'
+    }
 
     pitcher_data = []
     pitcher_keys = []
+
+    kResponse = requests.get(urls['Strikeouts'], headers=headers, timeout=5)
+    time.sleep(2)
+    if kResponse.status_code != 200:
+        print(f"Failed to fetch Event data. Status code: {kResponse.status_code}")
+        return None
+    kJSON = kResponse.json()
+
     for event in kJSON['events']:
         if 'startingPitcherPlayerName' in event['participants'][0]['metadata']:
             pitcher_keys.append((event['participants'][0]['metadata']['startingPitcherPlayerName'], event['participants'][1]['metadata']['shortName']))
         if 'startingPitcherPlayerName' in event['participants'][1]['metadata']:
             pitcher_keys.append((event['participants'][1]['metadata']['startingPitcherPlayerName'], event['participants'][0]['metadata']['shortName']))
     pitcher_dict = {pitcher: opponent for pitcher, opponent in pitcher_keys}
+
+    poResponse = requests.get(urls['Pitching Outs'], headers=headers, timeout=5)
+    time.sleep(2)
+    if poResponse.status_code != 200:
+        print(f"Failed to fetch Event data. Status code: {poResponse.status_code}")
+        poJSON = {'selections': []}
+    else:
+        poJSON = poResponse.json()
+
+    haResponse = requests.get(urls['Hits Allowed'], headers=headers, timeout=5)
+    time.sleep(2)
+    if haResponse.status_code != 200:
+        print(f"Failed to fetch Event data. Status code: {haResponse.status_code}")
+        haJSON = {'selections': []}
+    else:
+        haJSON = haResponse.json()
+
+    waResponse = requests.get(urls['Walks Allowed'], headers=headers, timeout=5)
+    if waResponse.status_code != 200:
+        print(f"Failed to fetch Event data. Status code: {waResponse.status_code}")
+        waJSON = {'selections': []}
+    else:
+        waJSON = waResponse.json()
+
 
     selections = [kJSON, poJSON, haJSON, waJSON]
     type = ['Strikeouts', 'Pitching Outs', 'Hits Allowed', 'Walks Allowed']
