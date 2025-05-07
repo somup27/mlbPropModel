@@ -7,7 +7,6 @@ import requests
 
 # ---------------------- Utility Functions ----------------------
 
-@st.cache_data
 def pitcher_lines_today():
     headers = {
         "accept": "application/json",  # changed to expect JSON response
@@ -228,7 +227,7 @@ def evaluate_pitching_out_prop(pitcher_data, full_season_data, opp_team, pitchin
         'double_play', 'grounded_into_double_play', 'strikeout_double_play',
         'sac_fly_double_play', 'triple_play', 'fielders_choice_out'
     ]).sum())
-    hit_games = (outs_per_game >= pitching_outs_line) if direction == 'over' else (outs_per_game < pitching_outs_line)
+    hit_games = (outs_per_game >= pitching_outs_line)
     hit_rate = hit_games.sum() / len(outs_per_game) if len(outs_per_game) > 0 else 0
 
 
@@ -238,7 +237,7 @@ def evaluate_pitching_out_prop(pitcher_data, full_season_data, opp_team, pitchin
             rolling_outs3 > pitching_outs_line,
             avg_pitch_count_3 >= 85,
             hit_rate >= .65,
-            opp_whip <= 1.15
+            opp_whip <= 1.11
         ]
     else:
         rules = [
@@ -389,11 +388,11 @@ def evaluate_walks_allowed(statcast_df, pitcher_id, opp_team, hand, walks_line, 
 
 # ---------------------- Streamlit UI ----------------------
 
-st.title("MLB Pitcher Props — Rule Evaluation")
+st.title("MLB Pitcher Props")
 
 with st.spinner("Loading data..."):
     props_df = pitcher_lines_today()
-    statcast_df = statcast('2025-03-27', '2025-05-05')
+    statcast_df = statcast('2025-03-27', '2025-05-06')
 
 evaluated = []
 
