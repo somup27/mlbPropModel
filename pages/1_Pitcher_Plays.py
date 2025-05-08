@@ -7,6 +7,9 @@ import requests
 
 # ---------------------- Utility Functions ----------------------
 
+def safe_int(s):
+    return int(s.replace('−', '-').replace('+', ''))
+
 def pitcher_lines_today():
     headers = {
         "accept": "application/json",  # changed to expect JSON response
@@ -77,6 +80,8 @@ def pitcher_lines_today():
 
     for i in range(len(selections)):
         for selection in selections[i]['selections']:
+            if safe_int(selection['displayOdds']['american']) < -160:
+                continue
             pitcher_name = selection['participants'][0]['name']
             opponent = pitcher_dict.get(pitcher_name, 'Unknown')
             line = selection['points']
@@ -131,12 +136,33 @@ def compute_k9(df):
 
 
 def compute_total_outs(df):
+    # Define known out-producing events
     outs_map = {
         'strikeout': 1, 'field_out': 1, 'force_out': 1, 'sac_bunt': 1, 'sac_fly': 1, 'double_play': 2,
         'grounded_into_double_play': 2, 'strikeout_double_play': 2, 'sac_fly_double_play': 2, 'triple_play': 3,
         'fielders_choice_out': 1
     }
-    return df[df['events'].isin(outs_map)]['events'].map(outs_map).sum()
+
+    # Calculate outs from explicit events
+    event_outs = df[df['events'].isin(outs_map)]['events'].map(outs_map).sum()
+
+    # Calculate outs from pickoffs or caught stealings with missing event label
+    df = df.sort_values(['game_date', 'at_bat_number', 'pitch_number']).copy()
+
+    # Shift for previous row comparison
+    df['prev_outs'] = df['outs_when_up'].shift(1)
+    df['prev_events'] = df['events'].shift(1)
+
+    # Identify rows where outs increased and the prior row had NaN event
+    pickoff_like_outs = df[
+        (df['prev_events'].isna()) &
+        (df['outs_when_up'] > df['prev_outs'])
+    ]['outs_when_up'] - df['prev_outs']
+
+    inferred_outs = pickoff_like_outs.sum()
+
+    total_outs = event_outs + inferred_outs
+    return int(total_outs)
 
 
 def evaluate_pitcher_strikeout_prop(df, pitcher_id, opp_team, hand, k_line):
@@ -227,6 +253,7 @@ def evaluate_pitching_out_prop(pitcher_data, full_season_data, opp_team, pitchin
         'double_play', 'grounded_into_double_play', 'strikeout_double_play',
         'sac_fly_double_play', 'triple_play', 'fielders_choice_out'
     ]).sum())
+
     hit_games = (outs_per_game >= pitching_outs_line)
     hit_rate = hit_games.sum() / len(outs_per_game) if len(outs_per_game) > 0 else 0
 
@@ -392,7 +419,7 @@ st.title("MLB Pitcher Props")
 
 with st.spinner("Loading data..."):
     props_df = pitcher_lines_today()
-    statcast_df = statcast('2025-03-27', '2025-05-06')
+    statcast_df = statcast('2025-03-27', '2025-05-07')
 
 evaluated = []
 with st.spinner("Evaluating pitcher props..."):

@@ -105,7 +105,7 @@ def batter_lines_today():
 
     for i in range(len(jsons)):
         for selection in jsons[i]['selections']:
-            if selection['points'] < 1.5 and int(safe_int(selection['displayOdds']['american'])) < -150:
+            if int(safe_int(selection['displayOdds']['american'])) < -160:
                 continue
             batter_name = selection['participants'][0]['name']
 
