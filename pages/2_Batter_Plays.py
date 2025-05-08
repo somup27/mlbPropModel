@@ -105,8 +105,6 @@ def batter_lines_today():
 
     for i in range(len(jsons)):
         for selection in jsons[i]['selections']:
-            if selection['label'].lower() == 'under':
-                continue
             if selection['points'] < 1.5 and int(safe_int(selection['displayOdds']['american'])) < -150:
                 continue
             batter_name = selection['participants'][0]['name']
@@ -138,7 +136,7 @@ def batter_lines_today():
 
     return pd.DataFrame(batter_data)
 
-def evaluate_tb_rules(batter_df, pitcher_df, pitcher_hand='R', batter_hand='L', tb_prop_line=1.5, lookback_games=10):
+def evaluate_tb_rules(batter_df, pitcher_df, pitcher_hand='R', batter_hand='L', tb_prop_line=1.5, lookback_games=15, direction='over'):
     # Assign Total Bases based on event
     def calculate_total_bases(events):
         return {
@@ -159,27 +157,33 @@ def evaluate_tb_rules(batter_df, pitcher_df, pitcher_hand='R', batter_hand='L', 
         )
 
         recent_games = game_tb.head(lookback_games)
+        if len(recent_games) < 10:
+            return None
         recent_tb = recent_games['TB']
 
         ## Rule 1: Hit Rate Over Line
         hit_rate = (recent_tb > tb_prop_line).mean()
-        rule_1 = hit_rate >= 0.65
+        rule_1 = hit_rate >= 0.65 if direction == 'over' else hit_rate <= 0.35
 
         ## Rule 2: Rolling Avg TB
         rolling_avg = recent_tb.mean()
-        rule_2 = rolling_avg >= (tb_prop_line + 0.25)
+        rule_2 = rolling_avg >= (tb_prop_line + 0.25) if direction == 'over' else rolling_avg <= (tb_prop_line - 0.25)
 
         ## Rule 3: TB vs Pitcher Handedness
         split_df = batter_df[batter_df['p_throws'] == pitcher_hand]
         split_game_tb = split_df.groupby('game_date')['TB'].sum()
-        rule_3 = split_game_tb.mean() >= (tb_prop_line + 0.25) if not split_game_tb.empty else False
+        split_tb_avg = split_game_tb.mean()
+        rule_3 = split_tb_avg >= (tb_prop_line + 0.25) if direction == 'over' else split_tb_avg <= (tb_prop_line - 0.25)
 
         ## Rule 4: xSLG or ISO
         batted_ball_events = split_df[split_df['bb_type'].notnull()]
         batted_ball_events['iso'] = batted_ball_events['estimated_slg_using_speedangle'] - batted_ball_events['estimated_ba_using_speedangle']
+        avg_xslg = batted_ball_events['estimated_slg_using_speedangle'].mean()
+        avg_iso = batted_ball_events['iso'].mean()
         rule_4 = (
-            batted_ball_events['estimated_slg_using_speedangle'].mean() >= 0.450 or
-            batted_ball_events['iso'].mean() >= 0.180
+            avg_xslg >= 0.450 or avg_iso >= 0.180
+        ) if direction == 'over' else (
+            avg_xslg <= 0.350 and avg_iso <= 0.120
         )
 
         ## Rule 5: Pitcher Weakness vs Batter Handedness
@@ -192,8 +196,11 @@ def evaluate_tb_rules(batter_df, pitcher_df, pitcher_hand='R', batter_hand='L', 
         xslg_allowed = pitcher_split[pitcher_split['bb_type'].notnull()]['estimated_slg_using_speedangle'].mean()
         tb_per_pa = pitcher_split.groupby(['game_date', 'batter'])['TB_allowed'].sum().mean()
 
-        rule_5 = (xslg_allowed >= 0.450 or tb_per_pa >= 1.0)
-
+        rule_5 = (
+            xslg_allowed >= 0.450 or tb_per_pa >= 1.0
+        ) if direction == 'over' else (
+            xslg_allowed <= 0.350 and tb_per_pa <= 0.7
+        )
         # Compile rule results
         rule_results = {
             'rule_1_hit_rate': rule_1,
@@ -226,7 +233,9 @@ st.title("MLB Batter Props")
 
 with st.spinner("Loading data..."):
     props_df = batter_lines_today()
-    statcast_df = statcast('2025-03-27', '2025-05-06')
+    statcast_df = statcast('2025-03-27', '2025-05-07')
+    print(props_df)
+    print(len(statcast_df))
 
 evaluated = []
 with st.spinner("Evaluating batter props..."):
@@ -237,7 +246,7 @@ with st.spinner("Evaluating batter props..."):
         pitcher_df = statcast_df[statcast_df['pitcher'] == opp_pid]
         pitcher_df = pitcher_df.sort_values(by=['game_date', 'at_bat_number', 'pitch_number'])
         if pitcher_df.empty: continue
-        result = evaluate_tb_rules(batter_df, pitcher_df, pitcher_df['p_throws'].iloc[0], batter_df['stand'].iloc[0], line)
+        result = evaluate_tb_rules(batter_df, pitcher_df, pitcher_df['p_throws'].iloc[0], batter_df['stand'].iloc[0], line, 17, label.lower())
         if not result: continue
 
         evaluated.append({
@@ -247,13 +256,13 @@ with st.spinner("Evaluating batter props..."):
             'Line': line,
             'Odds': odds,
             'Direction': label,
-            'Rolling Average Total Bases (Last 10 Games)': result['rolling_avg_tb'],
-            'Avg Total Bases vs. Hand (Last 10 Games)': result['vs_hand_split'],
+            'Rolling Average Total Bases (Last 17 Games)': result['rolling_avg_tb'],
+            'Avg Total Bases vs. Hand (Last 17 Games)': result['vs_hand_split'],
             'Avg xSLG': result['avg_xslg'],
             'Avg ISO': result['avg_iso'],
             'Pitcher xSLG Allowed': result['pitcher_xslg_allowed'],
             'Pitcher Total Bases Allowed per PA': result['pitcher_tb_allowed_per_pa'],
-            'Total Bases Hit Rate (L10)': result['hit_rate'],
+            'Total Bases Hit Rate (L17)': result['hit_rate'],
             'Rules Hit': result['score'],
             'Recommendation': 'Target' if result['score'] >= 4 else 'Pass'
         })
