@@ -395,120 +395,118 @@ with st.spinner("Loading data..."):
     statcast_df = statcast('2025-03-27', '2025-05-06')
 
 evaluated = []
+with st.spinner("Evaluating pitcher props..."):
+    for _, row in props_df.iterrows():
+        name, opp, label, line, odds, type = row['pitcher_name'], row['opponent'], row['label'], row['line'], row['odds'], row['type']
+        if opp == "A's": opp = 'ATH'
+        if opp == 'ARI': opp = 'AZ'
+        if opp == 'WAS': opp = 'WSH'
+        pid = get_player_id(name)
+        if not pid:
+            continue
+        pitcher_data = statcast_df[statcast_df['pitcher'] == pid]
+        pitcher_data = pitcher_data.sort_values(by=['game_date', 'at_bat_number', 'pitch_number'])
+        if pitcher_data.empty:
+            continue
+        hand = pitcher_data['p_throws'].iloc[0]
+        profile = get_player_info(pid)
+        team = profile['team']
 
-for _, row in props_df.iterrows():
-    name, opp, label, line, odds, type = row['pitcher_name'], row['opponent'], row['label'], row['line'], row['odds'], row['type']
-    if opp == "A's": opp = 'ATH'
-    if opp == 'ARI': opp = 'AZ'
-    if opp == 'WAS': opp = 'WSH'
-    pid = get_player_id(name)
-    if not pid:
-        continue
-    pitcher_data = statcast_df[statcast_df['pitcher'] == pid]
-    pitcher_data = pitcher_data.sort_values(by=['game_date', 'at_bat_number', 'pitch_number'])
-    if pitcher_data.empty:
-        continue
-    hand = pitcher_data['p_throws'].iloc[0]
-    profile = get_player_info(pid)
-    team = profile['team']
+        if type == 'Walks Allowed':
+            result = evaluate_walks_allowed(statcast_df, pid, opp, hand, line, direction=label.lower())
+        elif type == 'Pitching Outs':
+            result = evaluate_pitching_out_prop(pitcher_data, statcast_df, opp, line, hand, direction=label.lower())
+        elif type == 'Strikeouts':
+            result = evaluate_pitcher_strikeout_prop(statcast_df, pid, opp, hand, line)
+        else:
+            result = evaluate_hits_allowed_prop(pitcher_data, statcast_df, opp, line, hand, direction=label.lower())
+        if not result:
+            continue
 
-    if type == 'Walks Allowed':
-        result = evaluate_walks_allowed(statcast_df, pid, opp, hand, line, direction=label.lower())
-    elif type == 'Pitching Outs':
-        result = evaluate_pitching_out_prop(pitcher_data, statcast_df, opp, line, hand, direction=label.lower())
-    elif type == 'Strikeouts':
-        result = evaluate_pitcher_strikeout_prop(statcast_df, pid, opp, hand, line)
-    else:
-        result = evaluate_hits_allowed_prop(pitcher_data, statcast_df, opp, line, hand, direction=label.lower())
-    if not result:
-        continue
-
-    if type == 'Walks Allowed':
-        evaluated.append({
-            'Pitcher': name,
-            'Team': team,
-            'Opponent': opp,
-            'Prop': type,
-            'Line': line,
-            'Odds': odds,
-            'Direction': label,
-            'Season BB/9': result['rules']['season_bb9'],
-            'Rolling BB/9 (Last 3 Games)': result['rules']['rolling_bb9'],
-            'Opponent BB%': result['rules']['opp_bb_pct'],
-            'Median Walks Allowed (Last 3 Games)': result['rules']['median_walks_L3'],
-            'Walks Hit Rate': result['rules']['walks_hit_rate'],
-            'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
-            'Recommendation': 'Target' if (
-                result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
-                    result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
-                )
-            ) else 'Pass'
-        })
-    elif type == 'Pitching Outs':
-        evaluated.append({
-            'Pitcher': name,
-            'Team': team,
-            'Opponent': opp,
-            'Prop': type,
-            'Line': line,
-            'Odds': odds,
-            'Direction': label,
-            'Avg Outs/Start': result['season_outs_per_start'],
-            'Rolling Outs/Start (Last 3 Games)': result['rolling_outs3'],
-            'Avg Pitch Count (Last 3 Games)': result['avg_pitch_count_3'],
-            'Outs Hit Rate': result['outs_hit_rate'],
-            'Opponent WHIP vs. Hand': result['opp_whip'],
-            'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
-            'Recommendation': 'Target' if (
-                result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
-                    result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
-                )
-            ) else 'Pass'
-        })
-    elif type == "Strikeouts":
-        evaluated.append({
-            'Pitcher': name,
-            'Team': team,
-            'Opponent': opp,
-            'Prop': type,
-            'Line': line,
-            'Odds': odds,
-            'Direction': label,
-            'Season K/9': result['rules']['season_k9'],
-            'Rolling K/9 (Last 3 Games)': result['rules']['rolling_k9'],
-            'Opponent K%': result['rules']['opp_k_pct'],
-            'Median Pitch Count (Last 3 Games)': result['rules']['median_pitch_count'],
-            'Hit Rate': result['rules']['hit_rate'],
-            'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
-            'Recommendation': 'Target' if (
-                result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
-                    result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
-                )
-            ) else 'Pass'
-        })
-    else:
-        evaluated.append({
-            'Pitcher': name,
-            'Team': team,
-            'Opponent': opp,
-            'Prop': type,
-            'Line': line,
-            'Odds': odds,
-            'Direction': label,
-            'Season H/9': result['season_h9'],
-            'Rolling H/9 (Last 3 Games)': result['rolling_h9'],
-            'Opponent AVG vs. Hand': result['opp_avg_vs_hand'],
-            'Median Hits Allowed (Last 3 Games)': result['median_hits_allowed'],
-            'Hits Allowed Hit Rate': result['ha_hit_rate'],
-            'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
-            'Recommendation': 'Target' if (
-                result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
-                    result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
-                )
-            ) else 'Pass'
-        })
-
-
+        if type == 'Walks Allowed':
+            evaluated.append({
+                'Pitcher': name,
+                'Team': team,
+                'Opponent': opp,
+                'Prop': type,
+                'Line': line,
+                'Odds': odds,
+                'Direction': label,
+                'Season BB/9': result['rules']['season_bb9'],
+                'Rolling BB/9 (Last 3 Games)': result['rules']['rolling_bb9'],
+                'Opponent BB%': result['rules']['opp_bb_pct'],
+                'Median Walks Allowed (Last 3 Games)': result['rules']['median_walks_L3'],
+                'Walks Hit Rate': result['rules']['walks_hit_rate'],
+                'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
+                'Recommendation': 'Target' if (
+                    result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
+                        result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
+                    )
+                ) else 'Pass'
+            })
+        elif type == 'Pitching Outs':
+            evaluated.append({
+                'Pitcher': name,
+                'Team': team,
+                'Opponent': opp,
+                'Prop': type,
+                'Line': line,
+                'Odds': odds,
+                'Direction': label,
+                'Avg Outs/Start': result['season_outs_per_start'],
+                'Rolling Outs/Start (Last 3 Games)': result['rolling_outs3'],
+                'Avg Pitch Count (Last 3 Games)': result['avg_pitch_count_3'],
+                'Outs Hit Rate': result['outs_hit_rate'],
+                'Opponent WHIP vs. Hand': result['opp_whip'],
+                'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
+                'Recommendation': 'Target' if (
+                    result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
+                        result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
+                    )
+                ) else 'Pass'
+            })
+        elif type == "Strikeouts":
+            evaluated.append({
+                'Pitcher': name,
+                'Team': team,
+                'Opponent': opp,
+                'Prop': type,
+                'Line': line,
+                'Odds': odds,
+                'Direction': label,
+                'Season K/9': result['rules']['season_k9'],
+                'Rolling K/9 (Last 3 Games)': result['rules']['rolling_k9'],
+                'Opponent K%': result['rules']['opp_k_pct'],
+                'Median Pitch Count (Last 3 Games)': result['rules']['median_pitch_count'],
+                'Hit Rate': result['rules']['hit_rate'],
+                'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
+                'Recommendation': 'Target' if (
+                    result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
+                        result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
+                    )
+                ) else 'Pass'
+            })
+        else:
+            evaluated.append({
+                'Pitcher': name,
+                'Team': team,
+                'Opponent': opp,
+                'Prop': type,
+                'Line': line,
+                'Odds': odds,
+                'Direction': label,
+                'Season H/9': result['season_h9'],
+                'Rolling H/9 (Last 3 Games)': result['rolling_h9'],
+                'Opponent AVG vs. Hand': result['opp_avg_vs_hand'],
+                'Median Hits Allowed (Last 3 Games)': result['median_hits_allowed'],
+                'Hits Allowed Hit Rate': result['ha_hit_rate'],
+                'Rules Hit': result['rule_pass_count'] if 'rule_pass_count' in result else result['rules_hit'] if label == 'Over' else result['rules_miss'],
+                'Recommendation': 'Target' if (
+                    result['rule_pass_count'] >= 4 if 'rule_pass_count' in result else (
+                        result['rules_hit'] >= 4 if label == 'Over' else result['rules_miss'] >= 4
+                    )
+                ) else 'Pass'
+            })
 
 final_df = pd.DataFrame(evaluated)
 st.dataframe(final_df, use_container_width=True)
